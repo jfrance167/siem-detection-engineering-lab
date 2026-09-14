@@ -7,3 +7,4 @@ venv/
 reports/live-*.md
 reports/live-*.jsonl
 .test-temp/
+.gitleaks-report.json

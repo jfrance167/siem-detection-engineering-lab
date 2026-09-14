@@ -4,6 +4,19 @@ A defensive security lab that ingests normalized Windows, Linux, PowerShell,
 and firewall events; correlates activity across time; maps detections to
 MITRE ATT&CK; and produces analyst-ready JSONL alerts and an incident report.
 
+## ⚠️ Security notice
+
+This repository was created for **educational and training purposes only** as
+part of a cybersecurity portfolio. The events, identities, hosts, addresses,
+and suspicious activity are fictional or sanitized. They are included to
+demonstrate defensive detection and investigation techniques.
+
+This lab is not deliberately exploitable, but it models hostile behavior and
+is not a production SIEM. **Do not deploy it as a production security control**
+or reuse its sample data as real credentials or configuration. See
+[`SECURITY.md`](SECURITY.md) for safe reporting instructions and the complete
+disclaimer.
+
 The project is self-contained and uses only the Python standard library. It
 demonstrates detection-engineering fundamentals without requiring a paid SIEM
 or publishing sensitive host logs.
@@ -103,7 +116,32 @@ python -W error -m unittest discover -s tests -v
 ```
 
 GitHub Actions runs compilation, tests, and sample-report generation with
-Python 3.10 and 3.13 on Windows and Ubuntu.
+Python 3.10 and 3.13 on Windows and Ubuntu. Workflow actions are pinned to
+immutable commit SHAs, checkout credentials are not persisted, and the
+workflow token has read-only repository access.
+
+## Repository security
+
+- Gitleaks scans the full Git history on every push and pull request.
+- Dependabot checks the pinned GitHub Actions dependencies weekly.
+- `.private/`, live reports, Python caches, virtual environments, and local
+  Gitleaks reports are excluded from Git.
+- `SECURITY.md` explains private reporting and the educational-use boundary.
+- Repository-policy tests prevent removal of the security notice or use of
+  mutable GitHub Action tags.
+
+For an optional local pre-commit secret scan:
+
+```powershell
+python -m pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+The pre-commit configuration pins Gitleaks to an immutable revision. GitHub
+account controls—including two-factor authentication, collaborator access,
+and SSH-key rotation—must be managed in GitHub account or repository settings;
+they cannot be enforced by this codebase.
 
 ## Investigation guidance
 
@@ -123,6 +161,8 @@ For every alert:
 - Correlation is performed in memory and is limited to one input file.
 - Keyword rules and thresholds can create false positives or miss novel behavior.
 - ATT&CK mappings are analytical context, not attacker attribution.
+- Sample detections are educational examples and have not been tuned against a
+  production environment.
 
 ## Portfolio summary
 

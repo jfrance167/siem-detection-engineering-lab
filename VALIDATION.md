@@ -22,16 +22,19 @@ Expected result: seven alerts containing all seven configured rule IDs.
 Validated on September 14, 2026:
 
 - Python compilation completed successfully.
-- All 15 automated tests passed.
+- All 17 automated tests passed, including repository-policy checks.
 - The sample analysis processed 23 events and generated seven alerts.
 - Every configured rule ID appeared once in the generated alert set.
 - The generated JSONL alerts and Markdown incident report match the sample data.
+- Gitleaks v8.24.2 scanned the complete local Git history and found no leaks.
+- All GitHub Actions references resolve to immutable 40-character commit SHAs.
 
 ## Verification commands
 
 ```powershell
-python -m py_compile siem_lab.py tests\test_siem_lab.py
+python -m compileall -q siem_lab.py tests
 python -W error -m unittest discover -s tests -v
+gitleaks git --redact --verbose .
 python siem_lab.py analyze samples\events.jsonl `
   --rules rules\detections.json `
   --alerts reports\sample_alerts.jsonl `
