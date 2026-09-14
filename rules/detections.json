@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "rules": {
+    "AUTH-BRUTE-FORCE": {
+      "title": "Repeated authentication failures",
+      "severity": "high",
+      "techniques": ["T1110"],
+      "threshold": 5,
+      "window_minutes": 10
+    },
+    "AUTH-PASSWORD-SPRAY": {
+      "title": "Authentication failures across multiple accounts",
+      "severity": "high",
+      "techniques": ["T1110.003"],
+      "threshold": 4,
+      "window_minutes": 10
+    },
+    "AUTH-SUCCESS-AFTER-FAILURES": {
+      "title": "Successful authentication after repeated failures",
+      "severity": "high",
+      "techniques": ["T1078"],
+      "threshold": 3,
+      "window_minutes": 15
+    },
+    "ACCOUNT-PRIVILEGE-CHANGE": {
+      "title": "Account added to a privileged group",
+      "severity": "high",
+      "techniques": ["T1098"]
+    },
+    "SERVICE-INSTALLED": {
+      "title": "New system service installed",
+      "severity": "medium",
+      "techniques": ["T1543.003"]
+    },
+    "POWERSHELL-SUSPICIOUS": {
+      "title": "Suspicious PowerShell content",
+      "severity": "high",
+      "techniques": ["T1059.001"],
+      "keywords": ["encodedcommand", "downloadstring", "invoke-expression"]
+    },
+    "NETWORK-PORT-SCAN": {
+      "title": "Firewall denies across many destination ports",
+      "severity": "medium",
+      "techniques": ["T1046"],
+      "threshold": 10,
+      "window_minutes": 2
+    }
+  }
+}
