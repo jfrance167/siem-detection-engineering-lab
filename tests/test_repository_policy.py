@@ -27,7 +27,10 @@ class RepositoryPolicyTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(action_references), 3)
         for reference in action_references:
-            self.assertRegex(reference, r"^[^@]+@[0-9a-f]{40}$")
+            self.assertRegex(
+                reference,
+                r"^(?:[^@]+@[0-9a-f]{40}|docker://[^@]+@sha256:[0-9a-f]{64})$",
+            )
 
 
 if __name__ == "__main__":

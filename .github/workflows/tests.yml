@@ -40,7 +40,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Scan Git history for secrets
-        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Run Gitleaks directly so the scan does not depend on the push event's
+      # `before` commit. The wrapper action builds a `<before>^..<after>` range,
+      # which is invalid for an initial/root commit and after some force-pushes.
+      - name: Scan repository for secrets
+        uses: docker://ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f # v8.30.1
+        with:
+          args: detect --source . --redact --verbose --exit-code 2
