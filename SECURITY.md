@@ -13,6 +13,11 @@ SIEM. **Do not deploy this code as a production security control.** Do not use
 the sample values as real credentials or configuration, and only analyze logs
 from systems you own or are explicitly authorized to test.
 
+The event reader caps input at 100 MiB, each JSONL line at 1 MiB, and the event
+count at 100,000. Markdown report fields are escaped, control characters
+normalized, and common URL schemes defanged; JSONL alerts preserve parsed event
+values.
+
 If intentional vulnerabilities are added in the future, they must be clearly
 marked `⚠️ VULNERABLE BY DESIGN` in the relevant file and README section.
 
