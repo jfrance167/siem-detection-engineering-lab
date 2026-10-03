@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import math
 import os
+import re
 import sys
 import tempfile
-from collections import defaultdict, deque
+import unicodedata
+from collections import Counter, defaultdict, deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,6 +22,7 @@ from typing import Iterable, Sequence
 SCHEMA_VERSION = 1
 MAX_EVENTS = 100_000
 MAX_LINE_BYTES = 1_000_000
+MAX_INPUT_BYTES = 100 * 1024 * 1024
 REQUIRED_RULES = {
     "AUTH-BRUTE-FORCE",
     "AUTH-PASSWORD-SPRAY",
@@ -29,6 +33,7 @@ REQUIRED_RULES = {
     "NETWORK-PORT-SCAN",
 }
 VALID_SEVERITIES = {"low", "medium", "high", "critical"}
+_URL_SCHEME_RE = re.compile(r"(?i)\b(https?|ftps?|mailto):")
 
 
 @dataclass(frozen=True)
@@ -94,9 +99,17 @@ def parse_event(document: object, context: str) -> Event:
 
 def load_events(path: Path) -> list[Event]:
     events: list[Event] = []
+    total_bytes = 0
     try:
+        if path.stat().st_size > MAX_INPUT_BYTES:
+            raise ValueError(f"input exceeds {MAX_INPUT_BYTES} bytes")
         with path.open("rb") as stream:
-            for line_number, raw_line in enumerate(stream, 1):
+            line_number = 0
+            while raw_line := stream.readline(MAX_LINE_BYTES + 1):
+                line_number += 1
+                total_bytes += len(raw_line)
+                if total_bytes > MAX_INPUT_BYTES:
+                    raise ValueError(f"input exceeds {MAX_INPUT_BYTES} bytes")
                 if len(raw_line) > MAX_LINE_BYTES:
                     raise ValueError(f"line {line_number}: event exceeds size limit")
                 if not raw_line.strip():
@@ -188,10 +201,21 @@ def make_alert(
     )
 
 
-def trim_window(bucket: deque[Event], current: datetime, minutes: float) -> None:
+def trim_window(
+    bucket: deque[Event],
+    current: datetime,
+    minutes: float,
+    distinct_counts: Counter[str] | None = None,
+    distinct_field: str | None = None,
+) -> None:
     cutoff = current - timedelta(minutes=minutes)
     while bucket and bucket[0].timestamp < cutoff:
-        bucket.popleft()
+        expired = bucket.popleft()
+        if distinct_counts is not None and distinct_field is not None:
+            value = expired.data[distinct_field]
+            distinct_counts[value] -= 1
+            if distinct_counts[value] == 0:
+                del distinct_counts[value]
 
 
 def analyze_events(
@@ -200,7 +224,9 @@ def analyze_events(
     alerts: list[Alert] = []
     failures: dict[tuple[str, str], deque[Event]] = defaultdict(deque)
     spray: dict[str, deque[Event]] = defaultdict(deque)
+    spray_accounts: dict[str, Counter[str]] = defaultdict(Counter)
     denied: dict[str, deque[Event]] = defaultdict(deque)
+    denied_ports: dict[str, Counter[str]] = defaultdict(Counter)
     emitted: set[tuple[str, str]] = set()
 
     brute_rule = rules["AUTH-BRUTE-FORCE"]
@@ -232,17 +258,25 @@ def analyze_events(
             source_ip = event.data["source_ip"]
             spray_bucket = spray[source_ip]
             spray_bucket.append(event)
-            trim_window(spray_bucket, event.timestamp, float(spray_rule["window_minutes"]))
-            accounts = sorted({item.data["account"] for item in spray_bucket})
+            account_counts = spray_accounts[source_ip]
+            account_counts[event.data["account"]] += 1
+            trim_window(
+                spray_bucket,
+                event.timestamp,
+                float(spray_rule["window_minutes"]),
+                account_counts,
+                "account",
+            )
             marker = ("AUTH-PASSWORD-SPRAY", source_ip)
-            if len(accounts) >= int(spray_rule["threshold"]) and marker not in emitted:
+            if len(account_counts) >= int(spray_rule["threshold"]) and marker not in emitted:
+                accounts = sorted(account_counts)
                 alerts.append(
                     make_alert(
                         "AUTH-PASSWORD-SPRAY",
                         rules,
                         list(spray_bucket),
                         {"source_ip": source_ip, "accounts": ", ".join(accounts)},
-                        f"failures affected {len(accounts)} distinct accounts",
+                        f"failures affected {len(account_counts)} distinct accounts",
                     )
                 )
                 emitted.add(marker)
@@ -326,17 +360,26 @@ def analyze_events(
             source_ip = event.data["source_ip"]
             bucket = denied[source_ip]
             bucket.append(event)
-            trim_window(bucket, event.timestamp, float(scan_rule["window_minutes"]))
-            ports = sorted({item.data["destination_port"] for item in bucket}, key=int)
+            port_counts = denied_ports[source_ip]
+            port = event.data["destination_port"]
+            port_counts[port] += 1
+            trim_window(
+                bucket,
+                event.timestamp,
+                float(scan_rule["window_minutes"]),
+                port_counts,
+                "destination_port",
+            )
             marker = ("NETWORK-PORT-SCAN", source_ip)
-            if len(ports) >= int(scan_rule["threshold"]) and marker not in emitted:
+            if len(port_counts) >= int(scan_rule["threshold"]) and marker not in emitted:
+                ports = sorted(port_counts, key=int)
                 alerts.append(
                     make_alert(
                         "NETWORK-PORT-SCAN",
                         rules,
                         list(bucket),
                         {"source_ip": source_ip, "ports": ", ".join(ports)},
-                        f"firewall denied TCP connections to {len(ports)} distinct ports",
+                        f"firewall denied TCP connections to {len(port_counts)} distinct ports",
                     )
                 )
                 emitted.add(marker)
@@ -365,6 +408,30 @@ def render_alerts(alerts: Iterable[Alert]) -> str:
     return "\n".join(json.dumps(asdict(alert), sort_keys=True) for alert in alerts)
 
 
+def _markdown_text(value: object) -> str:
+    """Render untrusted event and rule fields as inert Markdown text."""
+    normalized = "".join(
+        " "
+        if unicodedata.category(character) in {"Cc", "Cf", "Zl", "Zp"}
+        else character
+        for character in str(value)
+    )
+    normalized = _URL_SCHEME_RE.sub(
+        lambda match: {
+            "http": "hxxp",
+            "https": "hxxps",
+            "ftp": "fxp",
+            "ftps": "fxps",
+            "mailto": "mail[to]",
+        }[match.group(1).lower()] + ":",
+        normalized,
+    )
+    escaped = html.escape(normalized, quote=True)
+    for character in "\\`*_{}[]()#+-.!|>":
+        escaped = escaped.replace(character, "\\" + character)
+    return escaped
+
+
 def render_report(events: Sequence[Event], alerts: Sequence[Alert]) -> str:
     severity_counts = {severity: 0 for severity in ("critical", "high", "medium", "low")}
     for alert in alerts:
@@ -382,8 +449,8 @@ def render_report(events: Sequence[Event], alerts: Sequence[Alert]) -> str:
         "",
         "## Coverage",
         "",
-        f"- Sources: {', '.join(sources)}",
-        f"- Hosts: {', '.join(hosts)}",
+        f"- Sources: {', '.join(_markdown_text(source) for source in sources)}",
+        f"- Hosts: {', '.join(_markdown_text(host) for host in hosts)}",
         f"- Time range: {iso_utc(events[0].timestamp)} to {iso_utc(events[-1].timestamp)}",
         f"- Severity totals: critical={severity_counts['critical']}, high={severity_counts['high']}, "
         f"medium={severity_counts['medium']}, low={severity_counts['low']}",
@@ -395,20 +462,25 @@ def render_report(events: Sequence[Event], alerts: Sequence[Alert]) -> str:
     ]
     for alert in alerts:
         lines.append(
-            f"| {alert.first_seen} | {alert.severity} | `{alert.rule_id}` | "
-            f"{', '.join(alert.techniques)} | {alert.host} | {alert.count} |"
+            f"| {_markdown_text(alert.first_seen)} | {_markdown_text(alert.severity)} | "
+            f"{_markdown_text(alert.rule_id)} | "
+            f"{', '.join(_markdown_text(item) for item in alert.techniques)} | "
+            f"{_markdown_text(alert.host)} | {alert.count} |"
         )
     lines.extend(["", "## Investigation timeline", ""])
     for alert in alerts:
-        entities = "; ".join(f"{key}={value}" for key, value in alert.entities.items())
+        entities = "; ".join(
+            f"{_markdown_text(key)}={_markdown_text(value)}"
+            for key, value in alert.entities.items()
+        )
         lines.extend(
             [
-                f"### {alert.first_seen} — {alert.title}",
+                f"### {_markdown_text(alert.first_seen)} — {_markdown_text(alert.title)}",
                 "",
-                f"- Rule: `{alert.rule_id}`",
-                f"- Severity: {alert.severity}",
-                f"- ATT&CK: {', '.join(alert.techniques)}",
-                f"- Observation: {alert.reason}",
+                f"- Rule: {_markdown_text(alert.rule_id)}",
+                f"- Severity: {_markdown_text(alert.severity)}",
+                f"- ATT&CK: {', '.join(_markdown_text(item) for item in alert.techniques)}",
+                f"- Observation: {_markdown_text(alert.reason)}",
                 f"- Entities: {entities}",
                 "- Analyst action: validate the account, host, source, and approved change context before escalation.",
                 "",

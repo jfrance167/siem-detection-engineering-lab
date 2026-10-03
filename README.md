@@ -88,8 +88,9 @@ Input is newline-delimited JSON. Every event uses exactly these fields:
 ```
 
 Timestamps must include a timezone. Metadata fields must be nonempty strings,
-and `data` must be a string-to-string object. Input is limited to 100,000
-events and one megabyte per line.
+and `data` must be a string-to-string object. Input is limited to 100 MiB total,
+100,000 events, and one megabyte per line. Markdown report fields are escaped
+and common URL schemes defanged; JSONL alerts retain the original parsed values.
 
 ## Use with real evidence
 
