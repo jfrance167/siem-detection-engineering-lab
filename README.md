@@ -4,6 +4,26 @@ A defensive security lab that ingests normalized Windows, Linux, PowerShell,
 and firewall events; correlates activity across time; maps detections to
 MITRE ATT&CK; and produces analyst-ready JSONL alerts and an incident report.
 
+## Project overview
+
+| Focus | Evidence | Scope |
+| --- | --- | --- |
+| Validate and correlate security events into explainable alerts | [Recorded validation](VALIDATION.md) · [Sample alerts](reports/sample_alerts.jsonl) · [Incident report](reports/sample_incident_report.md) | Offline Python analysis of normalized events; no production SIEM integration |
+
+### Workflow
+
+```mermaid
+flowchart LR
+    E["Normalized Windows, Linux, PowerShell, and firewall events"] --> V["Schema and rule validation"]
+    V --> C["Time-window correlation"]
+    C --> A["ATT&CK-mapped JSONL alerts"]
+    C --> R["Incident timeline and report"]
+    A --> H["Analyst review"]
+    R --> H
+```
+
+The dated validation record documents a 23-event synthetic scenario generating seven alerts. It is a reproducible lab result, not evidence of production deployment.
+
 ## ⚠️ Security notice
 
 This repository was created for **educational and training purposes only** as
@@ -171,3 +191,4 @@ For every alert:
 > correlates Windows, Linux, PowerShell, and firewall events; produces seven
 > ATT&CK-mapped detections; generates structured alerts and an incident
 > timeline; and includes safety controls, sanitized evidence, tests, and CI.
+
