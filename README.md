@@ -171,3 +171,7 @@ For every alert:
 > correlates Windows, Linux, PowerShell, and firewall events; produces seven
 > ATT&CK-mapped detections; generates structured alerts and an incident
 > timeline; and includes safety controls, sanitized evidence, tests, and CI.
+
+## License
+
+Original contributions are licensed under [MIT](LICENSE). See [licensing scope](LICENSING.md) for third-party exclusions.
